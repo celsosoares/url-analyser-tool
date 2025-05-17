@@ -8,9 +8,9 @@ st.write("Digite a URL de um site para obter um feedback.")
 url_input = st.text_input("URL do site:", placeholder="https://exemplo.com")
 
 if url_input:
-    classificacao, motivos, cor = rate_site(url_input)
-    st.markdown(f"<h2 style='color:{cor};'>{classificacao}</h2>", unsafe_allow_html=True)
-    if motivos:
+    classification, reasons, color = rate_site(url_input)
+    st.markdown(f"<h2 style='color:{color};'>{classification}</h2>", unsafe_allow_html=True)
+    if reasons:
         st.markdown("### Motivos:")
-        for m in motivos:
+        for m in reasons:
             st.write(f"- {m}")

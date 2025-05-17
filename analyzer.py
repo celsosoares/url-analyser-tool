@@ -1,6 +1,8 @@
 import tldextract
 from typing import Tuple, List
 
+from safe_browsing import check_safe_browsing
+
 
 suspicious_word = [
     "free", "bonus", "login", "secure", "account", "update", "verify",
@@ -12,31 +14,36 @@ def check_https(url):
 
 def short_domain(url):
     ext = tldextract.extract(url)
-    dominio = ext.domain
-    return len(dominio) <= 3
+    domain = ext.domain
+    return len(domain) <= 3
 
 def contains_suspicious_words(url):
-    return any(palavra in url.lower() for palavra in suspicious_word)
+    return any(word in url.lower() for word in suspicious_word)
 
 def rate_site(url: str) -> Tuple[str, List[str], str]:
     score = 0
-    motivos = []
+    reasons = []
 
     if not check_https(url):
         score += 1
-        motivos.append("Não utiliza HTTPS")
+        reasons.append("Não utiliza HTTPS")
 
     if short_domain(url):
         score += 1
-        motivos.append("Domínio muito curto")
+        reasons.append("Domínio muito curto")
 
     if contains_suspicious_words(url):
         score += 1
-        motivos.append("Contém palavras suspeitas")
+        reasons.append("Contém palavras suspeitas")
+
+    suspect, reason_sb = check_safe_browsing(url)
+    if suspect:
+        score += 2
+        reasons.append(reason_sb)
 
     if score == 0:
-        return "✅ Provavelmente legítimo", motivos, "green"
+        return "✅ Provavelmente legítimo", reasons, "green"
     elif score == 1:
-        return "⚠️ Potencialmente suspeito", motivos, "yellow"
+        return "⚠️ Potencialmente suspeito", reasons, "yellow"
     else:
-        return "❌ Alta suspeita de site fraudulento", motivos, "red"
+        return "❌ Alta suspeita de site fraudulento", reasons, "red"
