@@ -1,46 +1,30 @@
-import tldextract
+from safe_browsing import check_safe_browsing
+from model.feature_extraction import extract_features
+import joblib
+import os
 from typing import Tuple, List
 
-from safe_browsing import check_safe_browsing
+# Load Random Forest model
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "model", "rf_model.pkl")
+model = joblib.load(MODEL_PATH)
 
-
-suspicious_word = [
-    "free", "bonus", "login", "secure", "account", "update", "verify",
-    "banking", "paypal", "ebay", "urgent", "alert", "support", "webscr"
-]
-
-def check_https(url):
-    return url.lower().startswith("https://")
-
-def short_domain(url):
-    ext = tldextract.extract(url)
-    domain = ext.domain
-    return len(domain) <= 3
-
-def contains_suspicious_words(url):
-    return any(word in url.lower() for word in suspicious_word)
+def classify_with_random_forest(url: str) -> Tuple[int, List[str]]:
+    features = extract_features(url)
+    pred = model.predict([features])[0]  # Supondo que o modelo retorne 0,1 ou 2
+    reasons = []
+    return pred, reasons
 
 def rate_site(url: str) -> Tuple[str, List[str], str]:
-    score = 0
-    reasons = []
-
-    if not check_https(url):
-        score += 1
-        reasons.append("Não utiliza HTTPS")
-
-    if short_domain(url):
-        score += 1
-        reasons.append("Domínio muito curto")
-
-    if contains_suspicious_words(url):
-        score += 1
-        reasons.append("Contém palavras suspeitas")
-
-    suspect, reason_sb = check_safe_browsing(url)
-    if suspect:
-        score += 2
-        reasons.append(reason_sb)
-
+    isThreat, reason = check_safe_browsing(url)
+    if isThreat:
+        return (
+            "❌ Alta suspeita de site fraudulento",
+            [reason],
+            "red"
+        )
+    
+    score, reasons = classify_with_random_forest(url)
+    
     if score == 0:
         return "✅ Provavelmente legítimo", reasons, "green"
     elif score == 1:
