@@ -10,8 +10,8 @@ import requests
 
 
 RBL_SERVERS = [
-    "zen.spamhaus.org",  # Spamhaus
-    "bl.spamcop.net",    # SpamCop
+    "zen.spamhaus.org",
+    "bl.spamcop.net",
 ]
 
 
@@ -22,16 +22,16 @@ suspicious_word = [
     "limited", "billing", "gift", "security", "reset", "wallet", "crypto"
 ]
 
-def check_https(url: str) -> bool:
-    return url.lower().startswith("https://")
+def check_https(url: str) -> int:
+    return int(url.lower().startswith("https://"))
 
-def check_short_domain(url: str) -> bool:
+def check_short_domain(url: str) -> int:
     ext = tldextract.extract(url)
     domain = ext.domain
-    return len(domain) <= 3
+    return int(len(domain) <= 3)
 
-def check_contains_suspicious_words(url: str) -> bool:
-    return any(word in url.lower() for word in suspicious_word)
+def check_contains_suspicious_words(url: str) -> int:
+    return int(any(word in url.lower() for word in suspicious_word))
 
 def check_safe_browsing_status(url: str) -> Tuple[bool, str]:
     return check_safe_browsing(url)
@@ -41,7 +41,7 @@ def check_redirect_count(url: str, threshold: int = 2) -> int:
         response = requests.get(url, allow_redirects=True, timeout=5)
         return 1 if len(response.history) > threshold else 0
     except Exception:
-        return 1  # Trata erro como suspeito
+        return 1
 
 def check_domain_in_rbl(url: str) -> int:
     try:
@@ -57,7 +57,7 @@ def check_domain_in_rbl(url: str) -> int:
                 continue  # não listado neste RBL
         return 0  # não listado em nenhum RBL
     except Exception:
-        return -1  # erro na verificação
+        return -1
 
 
 def check_ip_from_trusted_country(url: str, trusted_countries=["BR", "US", "CA", "UK"]) -> int:
@@ -68,7 +68,8 @@ def check_ip_from_trusted_country(url: str, trusted_countries=["BR", "US", "CA",
         country = response.json().get("country", "")
         return 1 if country in trusted_countries else 0
     except Exception:
-        return 1  # Trata erro como não confiável
+        return 1
+
 
 def check_indexed_by_google(url: str) -> int:
     try:
@@ -78,7 +79,8 @@ def check_indexed_by_google(url: str) -> int:
         response = requests.get(search_url, headers=headers, timeout=5)
         return 1 if "Nenhum resultado encontrado" not in response.text else 0
     except Exception:
-        return 0  # Assumimos não indexado (normalmente legítimos estão indexados)
+        return 0
+    
 
 def check_domain_age_days(url: str, threshold_days: int = 180) -> int:
     try:
@@ -92,7 +94,7 @@ def check_domain_age_days(url: str, threshold_days: int = 180) -> int:
         age = (datetime.now() - creation_date).days
         return 1 if age < threshold_days else 0
     except Exception:
-        return 1  # trata erro como domínio jovem (suspeito)
+        return 1 
 
 def check_days_to_expiration(url: str, threshold_days: int = 90) -> int:
     try:
