@@ -7,6 +7,8 @@ import socket
 import whois
 from datetime import datetime
 import requests
+import ipaddress
+
 
 
 RBL_SERVERS = [
@@ -52,10 +54,10 @@ def check_domain_in_rbl(url: str) -> int:
             query = f"{reversed_ip}.{rbl}"
             try:
                 dns.resolver.resolve(query, "A")
-                return 1  # listado
+                return 1
             except dns.resolver.NXDOMAIN:
-                continue  # não listado neste RBL
-        return 0  # não listado em nenhum RBL
+                continue
+        return 0
     except Exception:
         return -1
 
@@ -90,7 +92,7 @@ def check_domain_age_days(url: str, threshold_days: int = 180) -> int:
         if isinstance(creation_date, list):
             creation_date = creation_date[0]
         if not isinstance(creation_date, datetime):
-            return 1  # data inválida
+            return 1
         age = (datetime.now() - creation_date).days
         return 1 if age < threshold_days else 0
     except Exception:
@@ -106,7 +108,34 @@ def check_days_to_expiration(url: str, threshold_days: int = 90) -> int:
         remaining = (expiration_date - datetime.now()).days
         return 1 if remaining < threshold_days else 0
     except:
-        return 1  # trata erro como suspeito
+        return 1
+
+
+def check_domain_is_ip(url: str) -> int:
+    domain = tldextract.extract(url).fqdn
+    try:
+        ipaddress.ip_address(domain)
+        return 1
+    except ValueError:
+        return 0
+
+
+def check_has_at_symbol(url: str) -> int:
+    return int("@" in url)
+
+
+def check_double_slash_redirect(url: str) -> int:
+    return int("//" in url.replace("://", "", 1))
+
+
+def check_hyphen_in_domain(url: str) -> int:
+    domain = tldextract.extract(url).domain
+    return int("-" in domain)
+
+
+def check_subdomain_count(url: str, threshold: int = 2) -> int:
+    subdomain = tldextract.extract(url).subdomain
+    return int(len(subdomain.split(".")) > threshold if subdomain else 0)
 
 
 def get_url_features(url: str) -> dict:
@@ -121,6 +150,12 @@ def get_url_features(url: str) -> dict:
         f8 = executor.submit(check_indexed_by_google, url)
         f9 = executor.submit(check_domain_age_days, url)
         f10 = executor.submit(check_days_to_expiration, url)
+        f11 = executor.submit(check_domain_is_ip, url)
+        f12 = executor.submit(check_has_at_symbol, url)
+        f13 = executor.submit(check_double_slash_redirect, url)
+        f14 = executor.submit(check_hyphen_in_domain, url)
+        f15 = executor.submit(check_subdomain_count, url)
+
 
         return {
             "uses_https": int(f1.result()),
@@ -132,5 +167,11 @@ def get_url_features(url: str) -> dict:
             "trusted_ip_country": f8.result(),
             "indexed_by_google": int(f6.result()),
             "domain_too_young": f9.result(),
-            "domain_expiring_soon": f10.result()
+            "domain_expiring_soon": f10.result(),
+            "is_ip_domain": f11.result(),
+            "has_at_symbol": f12.result(),
+            "has_double_slash": f13.result(),
+            "has_hifen": f14.result(),
+            "many_subdomain": f15.result()
+
         }
