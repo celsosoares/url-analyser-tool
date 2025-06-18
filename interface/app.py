@@ -9,7 +9,9 @@ url_input = st.text_input("URL do site:", placeholder="https://exemplo.com")
 
 if url_input:
     classification, reasons, color = rate_site(url_input)
-    st.markdown(f"<h2 style='color:{color};'>{classification}</h2>", unsafe_allow_html=True)
+    st.markdown(
+        f"<h2 style='color:{color};'>{classification}</h2>", unsafe_allow_html=True
+    )
     if reasons:
         st.markdown("### Motivos:")
         for m in reasons:
