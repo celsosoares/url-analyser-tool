@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, date
 import time
 from urllib.parse import parse_qs, urlparse
 import tldextract
@@ -81,6 +81,8 @@ def check_safe_browsing_status(url: str) -> Tuple[bool, str]:
 
 def check_redirect_count(url: str) -> int:
     try:
+        if not url.startswith("http"):
+            url = "http://" + url
         response = requests.get(url, allow_redirects=True, timeout=5)
         return len(response.history)
     except Exception as e:
@@ -129,15 +131,23 @@ def check_indexed_by_google(url: str) -> int:
 
 def check_domain_age_days(url: str) -> int:
     try:
+        if not url.startswith("http"):
+            url = "http://" + url
         domain = tldextract.extract(url).registered_domain
         info = whois.whois(domain)
         creation_date = info.creation_date
+
         if isinstance(creation_date, list):
             creation_date = creation_date[0]
-        if not isinstance(creation_date, datetime):
+        if not isinstance(creation_date, (datetime, date)):
+            print(f"(check_domain_age_days) Unexpected type: {type(creation_date)}")
             return -1
+
         age_days = (datetime.now() - creation_date).days
         return age_days
+    except (ConnectionError, socket.error) as e:
+        print(f"(check_domain_age_days) Network error in {url}: {e}")
+        return -1
     except Exception as e:
         print(f"(check_domain_age_days) Error in {url}: {e}")
         return -1
@@ -145,15 +155,23 @@ def check_domain_age_days(url: str) -> int:
 
 def check_days_to_expiration(url: str) -> int:
     try:
+        if not url.startswith("http"):
+            url = "http://" + url
         domain = tldextract.extract(url).registered_domain
         info = whois.whois(domain)
         expiration_date = info.expiration_date
+
         if isinstance(expiration_date, list):
             expiration_date = expiration_date[0]
-        if not isinstance(expiration_date, datetime):
+        if not isinstance(expiration_date, (datetime, date)):
+            print(f"(check_days_to_expiration) Unexpected type: {type(expiration_date)}")
             return -1
+
         remaining_days = (expiration_date - datetime.now()).days
         return remaining_days
+    except (ConnectionError, socket.error) as e:
+        print(f"(check_days_to_expiration) Network error in {url}: {e}")
+        return -1
     except Exception as e:
         print(f"(check_days_to_expiration) Error in {url}: {e}")
         return -1
