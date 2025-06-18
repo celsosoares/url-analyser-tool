@@ -1,7 +1,8 @@
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-from checks.feature_checks import get_url_features
 from typing import Dict
+
+from builder_csv import get_url_features
 
 
 def binary_label(label: str) -> int:
@@ -12,8 +13,8 @@ df = pd.read_csv("datasets/malicious_phish.csv")
 
 
 def process_row(row) -> Dict:
-    url = row['url']
-    label_str = row['type']
+    url = row["url"]
+    label_str = row["type"]
     label = binary_label(label_str)
     features = get_url_features(url)
     features["url"] = url
