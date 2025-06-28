@@ -3,6 +3,8 @@ import time
 from urllib.parse import parse_qs, urlparse
 import tldextract
 from typing import Tuple
+from features.validate import get_final_url
+from features.wordlists import PHISHING_PARAMS, RBL_SERVERS, SHORTENERS, SUSPICIOUS_WORD
 from utils.safe_browsing import check_safe_browsing
 import dns.resolver
 import socket
@@ -11,64 +13,14 @@ import requests
 import ipaddress
 
 
-RBL_SERVERS = [
-    "zen.spamhaus.org",
-    "bl.spamcop.net",
-]
-
-SUSPICIOUS_WORD = [
-    "login",
-    "secure",
-    "account",
-    "update",
-    "bank",
-    "verify",
-    "password",
-    "confirm",
-    "signin",
-    "urgent",
-    "alert",
-    "bonus",
-    "free",
-    "prize",
-    "winner",
-    "claim",
-    "webscr",
-    "paypal",
-    "ebay",
-    "support",
-    "service",
-    "limited",
-    "billing",
-    "gift",
-    "security",
-    "reset",
-    "wallet",
-    "crypto",
-]
-
-PHISHING_PARAMS = ["token", "session", "auth", "password", "login", "verify"]
-
-SHORTENERS = [
-    "bit.ly",
-    "tinyurl.com",
-    "goo.gl",
-    "ow.ly",
-    "t.co",
-    "is.gd",
-    "buff.ly",
-    "adf.ly",
-]
-
-
 def check_https(url: str) -> int:
     return int(url.lower().startswith("https://"))
 
 
-def check_short_domain(url: str) -> int:
+def check_short_domain(url: str, threshold: int = 3) -> int:
     ext = tldextract.extract(url)
     domain = ext.domain
-    return int(len(domain) <= 3)
+    return int(len(domain) <= threshold)
 
 
 def check_contains_suspicious_words(url: str) -> int:
@@ -76,17 +28,17 @@ def check_contains_suspicious_words(url: str) -> int:
 
 
 def check_safe_browsing_status(url: str) -> Tuple[bool, str]:
-    return check_safe_browsing(url)
+    return check_safe_browsing(get_final_url(url))
 
 
-def check_redirect_count(url: str) -> int:
+def check_has_many_redirects(url: str, threshold: int = 3) -> int:
     try:
-        if not url.startswith("http"):
-            url = "http://" + url
-        response = requests.get(url, allow_redirects=True, timeout=5)
-        return len(response.history)
+        final_url = get_final_url(url)
+        response = requests.get(final_url, allow_redirects=True, timeout=5)
+        redirects = len(response.history)
+        return 1 if redirects > threshold else 0
     except Exception as e:
-        print(f"(check_redirect_count) Error in {url}: {e}")
+        print(f"(check_has_many_redirects) Error in {url}: {e}")
         return -1
 
 
@@ -103,84 +55,91 @@ def check_domain_in_rbl(url: str) -> int:
             except dns.resolver.NXDOMAIN:
                 continue
         return 0
-    except Exception:
+    except Exception as e:
+        print(f"(check_domain_in_rbl) Error in {url}: {e}")
         return -1
 
 
-def check_ip_from_trusted_country(url: str) -> str:
+def check_ip_from_untrusted_country(url: str, untrusted_countries=["BR", "US", "CA"]) -> int:
     try:
-        domain = tldextract.extract(url).registered_domain
+        final_url = get_final_url(url)
+        domain = tldextract.extract(final_url).registered_domain
         ip = socket.gethostbyname(domain)
         response = requests.get(f"https://ipinfo.io/{ip}/json", timeout=5)
-        country = response.json().get("country", "Unknown")
-        return country
-    except Exception:
-        return "Unknown"
+        country = response.json().get("country", "")
+        return 1 if country in untrusted_countries else 0
+    except Exception as e:
+        print(f"(check_ip_from_untrusted_country) Error in {url}: {e}")
+        return -1
 
 
 def check_indexed_by_google(url: str) -> int:
     try:
-        domain = tldextract.extract(url).registered_domain
+        final_url = get_final_url(url)
+        domain = tldextract.extract(final_url).registered_domain
         search_url = f"https://www.google.com/search?q=site:{domain}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(search_url, headers=headers, timeout=5)
+        response = requests.get(search_url, timeout=5)
         return 1 if "Not found result" not in response.text else 0
-    except Exception:
-        return 0
+    except Exception as e:
+        print(f"(check_indexed_by_google) Error in {url}: {e}")
+        return -1
 
 
-def check_domain_age_days(url: str) -> int:
+def check_has_low_domain_age(url: str, threshold_days: int = 180) -> int:
     try:
-        if not url.startswith("http"):
-            url = "http://" + url
-        domain = tldextract.extract(url).registered_domain
+        final_url = get_final_url(url)
+        domain = tldextract.extract(final_url).registered_domain
         info = whois.whois(domain)
-        creation_date = info.creation_date
+        creation_date = (
+            info.creation_date
+            or info.get("created_date")
+            or info.get("created")
+            or None
+        )
 
         if isinstance(creation_date, list):
             creation_date = creation_date[0]
         if not isinstance(creation_date, (datetime, date)):
-            print(f"(check_domain_age_days) Unexpected type: {type(creation_date)}")
+            print(f"(check_has_low_domain_age) Unexpected type: {type(creation_date)}")
             return -1
 
         age_days = (datetime.now() - creation_date).days
-        return age_days
+        return 1 if age_days < threshold_days else 0
     except (ConnectionError, socket.error) as e:
-        print(f"(check_domain_age_days) Network error in {url}: {e}")
+        print(f"(check_has_low_domain_age) Network error in {url}: {e}")
         return -1
     except Exception as e:
-        print(f"(check_domain_age_days) Error in {url}: {e}")
+        print(f"(check_has_low_domain_age) Error in {url}: {e}")
         return -1
 
 
-def check_days_to_expiration(url: str) -> int:
+def check_has_few_days_to_expire(url: str, threshold_days: int = 90) -> int:
     try:
-        if not url.startswith("http"):
-            url = "http://" + url
-        domain = tldextract.extract(url).registered_domain
+        final_url = get_final_url(url)
+        domain = tldextract.extract(final_url).registered_domain
         info = whois.whois(domain)
         expiration_date = info.expiration_date
 
         if isinstance(expiration_date, list):
             expiration_date = expiration_date[0]
         if not isinstance(expiration_date, (datetime, date)):
-            print(f"(check_days_to_expiration) Unexpected type: {type(expiration_date)}")
+            print(f"(check_has_few_days_to_expire) Unexpected type: {type(expiration_date)}")
             return -1
 
         remaining_days = (expiration_date - datetime.now()).days
-        return remaining_days
+        return 1 if remaining_days < threshold_days else 0
     except (ConnectionError, socket.error) as e:
-        print(f"(check_days_to_expiration) Network error in {url}: {e}")
+        print(f"(check_has_few_days_to_expire) Network error in {url}: {e}")
         return -1
     except Exception as e:
-        print(f"(check_days_to_expiration) Error in {url}: {e}")
+        print(f"(check_has_few_days_to_expire) Error in {url}: {e}")
         return -1
 
 
 def check_domain_is_ip(url: str) -> int:
-    domain = tldextract.extract(url).fqdn
     try:
-        ipaddress.ip_address(domain)
+        hostname = urlparse(url).hostname
+        ipaddress.ip_address(hostname)
         return 1
     except ValueError:
         return 0
@@ -199,19 +158,24 @@ def check_hyphen_in_domain(url: str) -> int:
     return int("-" in domain)
 
 
-def check_subdomain_count(url: str) -> int:
-    subdomain = tldextract.extract(url).subdomain
-    if subdomain:
-        return len(subdomain.split("."))
-    return 0
+def check_has_many_subdomains(url: str, threshold: int = 3) -> int:
+    try:
+        subdomain = tldextract.extract(url).subdomain
+        count = len(subdomain.split(".")) if subdomain else 0
+        return 1 if count > threshold else 0
+    except Exception as e:
+        print(f"(check_has_many_subdomains) Error in {url}: {e}")
+        return -1
 
 
-def check_query_params_count(url: str) -> int:
+def check_has_many_query_params(url: str, threshold: int = 5) -> int:
     try:
         parsed = urlparse(url)
         query_params = parse_qs(parsed.query)
-        return len(query_params)
-    except Exception:
+        count = len(query_params)
+        return 1 if count > threshold else 0
+    except Exception as e:
+        print(f"(check_has_many_query_params) Error in {url}: {e}")
         return -1
 
 
@@ -223,7 +187,8 @@ def check_phishing_query_params(url: str) -> int:
             if param in query_params:
                 return 1
         return 0
-    except Exception:
+    except Exception as e:
+        print(f"(check_phishing_query_params) Error in {url}: {e}")
         return -1
 
 
@@ -237,7 +202,8 @@ def check_nonstandard_port(url: str) -> int:
         if (scheme == "http" and port != 80) or (scheme == "https" and port != 443):
             return 1
         return 0
-    except Exception:
+    except Exception as e:
+        print(f"(check_nonstandard_port) Error in {url}: {e}")
         return -1
 
 
@@ -245,15 +211,19 @@ def check_url_shortener(url: str) -> int:
     try:
         domain = tldextract.extract(url).registered_domain.lower()
         return 1 if domain in SHORTENERS else 0
-    except Exception:
+    except Exception as e:
+        print(f"(check_url_shortenet) Error in {url}: {e}")
         return -1
 
 
-def check_response_time_ms(url: str):
+def check_has_high_response_time(url: str, threshold_ms: int = 1000) -> int:
     try:
+        final_url = get_final_url(url)
         start = time.time()
-        response = requests.get(url, timeout=5)
-        elapsed = (time.time() - start) * 1000
-        return round(elapsed, 2)
-    except Exception:
+        response = requests.get(final_url, timeout=10, verify=False)
+        elapsed = (time.time() - start) * 1000 
+
+        return 1 if elapsed > threshold_ms else 0
+    except Exception as e:
+        print(f"(check_has_high_response_time) Error in {url}: {e}")
         return -1

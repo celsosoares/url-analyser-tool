@@ -1,0 +1,9 @@
+version: "3.3"
+
+services:
+  urlscanner:
+    build: .
+    container_name: urlscanner
+    restart: "no"
+    volumes:
+      - ./:/app
