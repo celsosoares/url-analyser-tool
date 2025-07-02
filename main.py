@@ -25,7 +25,7 @@ def is_valid_feature_set(features: Dict, threshold: float = 0.7) -> bool:
     return (valid / total) >= threshold if total > 0 else False
 
 
-df = pd.read_csv("datasets/urls_with_label.csv")
+df = pd.read_csv("datasets/url_with_result.csv")
 
 
 def process_row(row) -> Dict:
